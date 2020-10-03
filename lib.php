@@ -252,25 +252,25 @@ function eid_easy_providers()
     return [
         [
             'action_type' => 'ee-id-card',
-            'name'        => 'Estonian ID kaart',
+            'name'        => 'Estonian ID card',
             'icon'        => 'eid_idkaart_mark.png'
         ],
         [
             'action_type' => 'lv-id-card',
-            'name'        => 'Latvian ID kaart',
+            'name'        => 'Latvian ID card',
             'icon'        => 'latvia-id-card.png',
         ],
         [
             'action_type' => 'lt-id-card',
-            'name'        => 'Lithuanian ID kaart',
+            'name'        => 'Lithuanian ID card',
             'button_text' => 'AT kortelė',
         ], [
             'action_type' => 'be-id-card',
-            'name'        => 'Belgium ID kaart',
+            'name'        => 'Belgium ID card',
             'icon'        => 'belgia-id-card.svg',
         ], [
             'action_type' => 'mid-login',
-            'name'        => 'Mobile-ID',
+            'name'        => 'Estonian Mobile-ID',
             'icon'        => 'eid_mobiilid_mark.png',
         ], [
             'action_type' => 'lt-mobile-id',
@@ -278,11 +278,11 @@ function eid_easy_providers()
             'button_text' => 'M. parašas',
         ], [
             'action_type' => 'smartid',
-            'name'        => 'Smart-ID',
+            'name'        => 'Smart-ID mobile app',
             'icon'        => 'Smart-ID_login_btn.png',
         ], [
             'action_type' => 'lv-eparaksts-mobile-login',
-            'name'        => 'Latvian eParaksts Mobile',
+            'name'        => 'Latvian eParaksts Mobile app',
             'icon'        => 'eparaksts-mobile.png',
         ]
     ];
