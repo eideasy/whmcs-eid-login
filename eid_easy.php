@@ -4,13 +4,14 @@ if (!defined("WHMCS")) {
 }
 
 require_once realpath(dirname(__FILE__)) . '/lib.php';
+use WHMCS\Database\Capsule;
 
 function eid_easy_config()
 {
     $configarray = [
         "name"        => "eID Easy login",
         "description" => "Register and identify users with eID methods, for example Estonian, Latvian, Lithuanian and Belgian ID cards, Mobile-ID solutions and Smart-ID app",
-        "version"     => "1.1",
+        "version"     => "1.2",
         "author"      => "eID Easy",
         "language"    => "english",
         "fields"      => []
@@ -40,14 +41,6 @@ function eid_easy_config()
         "Default"      => "https://id.eideasy.com"
     ];
 
-    $configarray['fields']['custom_field_name'] = [
-        "FriendlyName" => "ID code field name",
-        "Type"         => "text",
-        "Size"         => "30",
-        "Description"  => 'Custom field name where to store user ID code (Setup > Custom client fields)',
-        "Default"      => "idcode"
-    ];
-
     // Read Providers
     $providers = eid_easy_providers();
 
@@ -63,5 +56,64 @@ function eid_easy_config()
     }
 
     return $configarray;
+}
+
+function eid_easy_upgrade($vars)
+{
+    $currentlyInstalledVersion = $vars['version'];
+
+    if (version_compare('1.2', $currentlyInstalledVersion)) {
+        if (!Capsule::schema()->hasTable('mod_eideasy_users')) {
+            Capsule::schema()
+                ->create(
+                    'mod_eideasy_users',
+                    function ($table) {
+                        /** @var \Illuminate\Database\Schema\Blueprint $table */
+                        $table->increments('id');
+                        $table->text('idcode');
+                        $table->text('country');
+                        $table->text('firstname');
+                        $table->text('lastname');
+                        $table->integer('user_id')->unsigned();
+                        $table->foreign('user_id')->references('id')->on('tblusers')->cascadeOnDelete();
+                    }
+                );
+        }
+    }
+}
+
+function eid_easy_activate()
+{
+    logActivity("eID Easy module activated, creating database");
+    // Create custom tables and schema required by your module
+    try {
+        if (!Capsule::schema()->hasTable('mod_eideasy_users')) {
+            Capsule::schema()
+                ->create(
+                    'mod_eideasy_users',
+                    function ($table) {
+                        /** @var \Illuminate\Database\Schema\Blueprint $table */
+                        $table->increments('id');
+                        $table->text('idcode');
+                        $table->text('country');
+                        $table->text('firstname');
+                        $table->text('lastname');
+                        $table->integer('user_id')->unsigned();
+                        $table->foreign('user_id')->references('id')->on('tblusers')->cascadeOnDelete();
+                    }
+                );
+        }
+        return [
+            // Supported values here include: success, error or info
+            'status'      => 'success',
+            'description' => 'eID Easy database created',
+        ];
+    } catch (\Exception $e) {
+        return [
+            // Supported values here include: success, error or info
+            'status'      => "error",
+            'description' => 'Unable to create eID Easy table mod_eideasy_users: ' . $e->getMessage(),
+        ];
+    }
 }
 

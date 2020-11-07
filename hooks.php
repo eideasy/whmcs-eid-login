@@ -10,7 +10,6 @@ use WHMCS\Database\Capsule;
 
 function eid_easy_login_html()
 {
-    global $CONFIG;
     $clientId = eid_easy_conf('client_id');
     if (strlen($clientId) < 5) {
         return "<strong>ERROR: eID Easy client ID is missing</strong>";
@@ -22,10 +21,6 @@ function eid_easy_login_html()
     $apiUrl = eid_easy_conf('api_url');
     if (strlen($apiUrl) < 5) {
         return "<strong>ERROR: eID Easy API url is missing</strong>";
-    }
-    $fieldName = eid_easy_conf('custom_field_name');
-    if (strlen($fieldName) < 2) {
-        return "<strong>ERROR: eID Easy ID code field name missing</strong>";
     }
 
     $redirect     = eid_easy_get_current_url();
@@ -74,15 +69,13 @@ function eid_easy_login_html()
             $userId = eid_easy_create_user($userData);
         }
 
-        if (eid_easy_login_user($userId)) {
-            $redirect_to = eid_easy_get_current_url();
-
-            // Redirect
+        $redirect_to = eid_easy_login_user($userId);
+        if ($redirect_to) {
             header("Location: " . $redirect_to);
             exit;
         }
 
-        logActivity("User login failed $userId.", 0);
+        logActivity("eID Easy User login failed $userId.", 0);
         return "<strong>eID Login failed</strong></br>.$authorizeHtml";
     }
 
@@ -97,14 +90,5 @@ function eid_easy_shortcodes()
         'eid_easy_login_html' => eid_easy_login_html(),
     ];
 }
-
-add_hook('AddonConfig', 1, function ($vars) {
-    logActivity("AddonConfig", 0);
-});
-
-//Obtain the values defined in the AddonConfig hook point and save them as required
-add_hook('AddonConfigSave', 1, function ($vars) {
-    logActivity("AddonConfigSave", 0);
-});
 
 add_hook("ClientAreaPage", 1, "eid_easy_shortcodes");

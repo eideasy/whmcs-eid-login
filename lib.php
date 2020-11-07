@@ -71,48 +71,40 @@ function eid_easy_get_client_ip()
         }
     }
 
-    return '';
+    return '-';
 }
 
 function eid_easy_login_user($userid)
 {
-    global $cc_encryption_hash;
-
-    $ip_address = eid_easy_get_client_ip();
+    $ipaddress = eid_easy_get_client_ip();
 
     // Read user
-    $entry = Capsule::table('tblclients')->where('id', '=', $userid)->first();
+    $entry = Capsule::table('tblusers')->where('id', '=', $userid)->first();
     if (is_object($entry) && isset($entry->id)) {
-        if (!session_id()) {
-            session_start();
+        $command  = 'CreateSsoToken';
+        $postData = [
+            'user_id' => $userid,
+        ];
+
+        $result = localAPI($command, $postData);
+
+        if (!is_array($result) || !$result['result'] === "success") {
+            logActivity("eID Easy login token creation failed: " . json_encode($result));
+            return false;
         }
 
-        // Added in more recent versions of WHMCS.
-        if (method_exists('WHMCS\Authentication\Client', 'generateClientLoginHash')) {
-            $_SESSION['uid'] = $entry->id;
-            $_SESSION['upw'] = WHMCS\Authentication\Client::generateClientLoginHash($entry->id, '', $entry->password, $entry->email);
-        } else {
-            $_SESSION['uid'] = $entry->id;
-            $_SESSION['upw'] = sha1($entry->id . $entry->password . $ip_address . substr(sha1($cc_encryption_hash), 0, 20));
-        }
-
-        // Persist
-        session_write_close();
-
-
-        $userid    = $entry->id;
-        $ipaddress = $_SERVER['REMOTE_ADDR'];
-        $host      = gethostbyaddr($ipaddress);
-        $desc      = "eID Easy login from: $host";
-        $user      = "Client";
-        $nowTS     = date("Y-m-d H:i:s");
+        $userid = $entry->id;
+        $host   = gethostbyaddr($ipaddress) ?: "-";
+        $desc   = "eID Easy login from: $host";
+        $user   = "Client";
+        $nowTS  = date("Y-m-d H:i:s");
 
         $dataadd = ["date" => $nowTS, "userid" => $userid, "ipaddr" => $ipaddress, "description" => $desc, "user" => $user];
         Capsule::table("tblactivitylog")->insert($dataadd);
         Capsule::table('tblclients')->where('id', $entry->id)->update(['ip' => $ipaddress, 'lastlogin' => $nowTS, 'host' => $host]);
 
         // User logged in
-        return true;
+        return $result['redirect_url'];
     }
 
     return false;
@@ -120,21 +112,16 @@ function eid_easy_login_user($userid)
 
 function eid_easy_get_existing_user($userData)
 {
-    $customField = Capsule::table('tblcustomfields')->where('fieldname', eid_easy_conf('custom_field_name'))->first();
-    if (!$customField) {
-        return null;
-    }
-
-    $fieldValue = Capsule::table('tblcustomfieldsvalues')
-        ->where('fieldid', $customField->id)
-        ->where('value', $userData['idcode'])
+    $eidEasyUser = Capsule::table('mod_eideasy_users')
+        ->where('idcode', $userData['idcode'])
+        ->where('country', $userData['country'])
         ->first();
 
-    if (!$fieldValue) {
+    if (!$eidEasyUser) {
         return null;
     }
 
-    $user = Capsule::table('tblclients')->where('id', $fieldValue->relid)->where('country', $userData['country'])->first();
+    $user = Capsule::table('tblusers')->find($eidEasyUser->user_id);
     if (!$user) {
         return null;
     }
@@ -149,40 +136,37 @@ function eid_easy_create_user($userData)
     $client_data['lastname']  = $userData['lastname'];
     $client_data['password2'] = bin2hex(openssl_random_pseudo_bytes(40));
     $client_data['country']   = $userData['country'];
+    $client_data['email']     = $userData['country'] . "-" . $userData['idcode'] . "@placeholder.localhost";
 
     // Pass as true to ignore required fields validation.
     $client_data['skipvalidation'] = true;
     $client_data['noemail']        = true;
 
-    // Admin Username.
-    $admin_username = eid_easy_get_admin_username();
+    logActivity("eID Easy creating new user: " . json_encode($userData));
 
     // Add Client.
-    $result = localAPI('AddClient', $client_data, $admin_username);
+    $result = localAPI('AddClient', $client_data);
     if (is_array($result) && !empty($result['clientid'])) {
-        $customField = Capsule::table('tblcustomfields')->where('fieldname', eid_easy_conf('custom_field_name'))->first();
-        if (!$customField) {
+        $clientid   = $result['clientid'];
+        $clientUser = Capsule::table('tblusers_clients')->where('client_id', $clientid)->first();
+        if ($clientUser) {
+            Capsule::table('mod_eideasy_users')->insert([
+                'user_id'   => $clientUser->auth_user_id,
+                'idcode'    => $userData['idcode'],
+                'country'   => $userData['country'],
+                'firstname' => $userData['firstname'],
+                'lastname'  => $userData['lastname']
+            ]);
+
+            return $clientUser->auth_user_id;
+        } else {
+            logActivity("eID Easy User ID detection failed during create - " . json_encode($result));
             return null;
         }
-        Capsule::table('tblcustomfieldsvalues')->insert(['fieldid' => $customField->id, 'value' => $userData['idcode'], 'relid' => $result['clientid']]);
-
-        return $result['clientid'];
     }
-    logActivity("User create failed - " . json_encode($result));
+    logActivity("eID Easy User create failed - " . json_encode($result));
 
     return null;
-}
-
-function eid_easy_get_admin_username()
-{
-    $username = null;
-
-    $entry = Capsule::table('tbladmins')->select('username')->where('roleid', '=', 1)->first();
-    if (is_object($entry) && isset($entry->username)) {
-        $username = $entry->username;
-    }
-
-    return $username;
 }
 
 function eid_easy_conf($key)
