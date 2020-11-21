@@ -183,7 +183,7 @@ function eid_easy_conf($key)
 function eid_easy_get_current_url()
 {
     // Extract parts
-    $request_uri      = $_SERVER['PHP_SELF'];
+    $request_uri      = parse_url($_SERVER['REQUEST_URI'])['path'];
     $request_protocol = (eid_easy_login_is_https_on() ? 'https' : 'http');
     $request_host     = (isset($_SERVER['HTTP_X_FORWARDED_HOST']) ? $_SERVER['HTTP_X_FORWARDED_HOST'] : (isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : $_SERVER['SERVER_NAME']));
 

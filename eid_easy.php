@@ -11,7 +11,7 @@ function eid_easy_config()
     $configarray = [
         "name"        => "eID Easy login",
         "description" => "Register and identify users with eID methods, for example Estonian, Latvian, Lithuanian and Belgian ID cards, Mobile-ID solutions and Smart-ID app",
-        "version"     => "1.2",
+        "version"     => "2.1",
         "author"      => "eID Easy",
         "language"    => "english",
         "fields"      => []
