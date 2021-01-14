@@ -75,7 +75,7 @@ function eid_easy_login_html()
             exit;
         }
 
-        logActivity("eID Easy User login failed $userId.", 0);
+        logActivity("eID Easy User login failed $userId.");
         return "<strong>eID Login failed</strong></br>.$authorizeHtml";
     }
 

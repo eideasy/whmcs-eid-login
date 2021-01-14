@@ -95,7 +95,7 @@ function eid_easy_login_user($userid)
 
         $userid = $entry->id;
         $host   = gethostbyaddr($ipaddress) ?: "-";
-        $desc   = "eID Easy login from: $host";
+        $desc   = "eID Easy login $userid from: $host";
         $user   = "Client";
         $nowTS  = date("Y-m-d H:i:s");
 
@@ -135,35 +135,49 @@ function eid_easy_create_user($userData)
     $client_data['firstname'] = $userData['firstname'];
     $client_data['lastname']  = $userData['lastname'];
     $client_data['password2'] = bin2hex(openssl_random_pseudo_bytes(40));
-    $client_data['country']   = $userData['country'];
     $client_data['email']     = $userData['country'] . "-" . $userData['idcode'] . "@placeholder.localhost";
-
-    // Pass as true to ignore required fields validation.
-    $client_data['skipvalidation'] = true;
-    $client_data['noemail']        = true;
 
     logActivity("eID Easy creating new user: " . json_encode($userData));
 
-    // Add Client.
-    $result = localAPI('AddClient', $client_data);
-    if (is_array($result) && !empty($result['clientid'])) {
-        $clientid   = $result['clientid'];
-        $clientUser = Capsule::table('tblusers_clients')->where('client_id', $clientid)->first();
-        if ($clientUser) {
-            Capsule::table('mod_eideasy_users')->insert([
-                'user_id'   => $clientUser->auth_user_id,
-                'idcode'    => $userData['idcode'],
-                'country'   => $userData['country'],
-                'firstname' => $userData['firstname'],
-                'lastname'  => $userData['lastname']
-            ]);
+    $customField = Capsule::table('tblcustomfields')->where('fieldname', 'Isikukood')->first(); // Using custom client fields is deprecated since WHMCS 8.
+    if ($customField) {
+        $customFieldValue = Capsule::table('tblcustomfieldsvalues')->where('fieldid', $customField->id)->where('value', $userData['idcode'])->first();
+        if ($customFieldValue) {
+            $clientid  = $customFieldValue->relid;
+            $userCount = Capsule::table('tblusers_clients')->where('client_id', $clientid)->count();
+            if ($userCount !== 1) {
+                logActivity("eID Easy invalid number of client users:" . $userCount);
+                return null;
+            }
+            $clientUser = Capsule::table('tblusers_clients')->where('client_id', $clientid)->first();
+            if ($clientUser) {
+                Capsule::table('mod_eideasy_users')->insert([
+                    'user_id'   => $clientUser->auth_user_id,
+                    'idcode'    => $userData['idcode'],
+                    'country'   => $userData['country'],
+                    'firstname' => $userData['firstname'],
+                    'lastname'  => $userData['lastname']
+                ]);
 
-            return $clientUser->auth_user_id;
-        } else {
-            logActivity("eID Easy User ID detection failed during create - " . json_encode($result));
-            return null;
+                return $clientUser->auth_user_id;
+            }
         }
     }
+
+    $result = localApi('AddUser', $client_data);
+    if (is_array($result) && !empty($result['user_id'])) {
+        Capsule::table('mod_eideasy_users')->insert([
+            'user_id'   => $result['user_id'],
+            'idcode'    => $userData['idcode'],
+            'country'   => $userData['country'],
+            'firstname' => $userData['firstname'],
+            'lastname'  => $userData['lastname']
+        ]);
+
+        logActivity("eID Easy User created: " . json_encode($result));
+        return $result['user_id'];
+    }
+
     logActivity("eID Easy User create failed - " . json_encode($result));
 
     return null;
