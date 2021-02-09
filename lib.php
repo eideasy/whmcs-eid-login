@@ -74,40 +74,56 @@ function eid_easy_get_client_ip()
     return '-';
 }
 
-function eid_easy_login_user($userid)
+function eid_easy_login_user($userId)
 {
     $ipaddress = eid_easy_get_client_ip();
 
     // Read user
-    $entry = Capsule::table('tblusers')->where('id', '=', $userid)->first();
+    $entry = Capsule::table('tblusers')->where('id', '=', $userId)->first();
     if (is_object($entry) && isset($entry->id)) {
+        $clientId = eid_easy_get_first_client($userId);
+        if (!$clientId) {
+            $clientId = eid_easy_add_default_client($userId);
+        }
+
         $command  = 'CreateSsoToken';
         $postData = [
-            'user_id' => $userid,
+            'client_id' => $clientId,
+            'user_id'   => $userId,
         ];
 
-        $result = localAPI($command, $postData);
+        $postData['client_id'] = $clientId;
+        $result                = localAPI($command, $postData);
 
         if (!is_array($result) || !$result['result'] === "success") {
             logActivity("eID Easy login token creation failed: " . json_encode($result));
             return false;
         }
 
-        $userid = $entry->id;
+        $userId = $entry->id;
         $host   = gethostbyaddr($ipaddress) ?: "-";
-        $desc   = "eID Easy login $userid from: $host";
+        $desc   = "eID Easy login user=$userId client=$clientId from: $host";
         $user   = "Client";
         $nowTS  = date("Y-m-d H:i:s");
 
-        $dataadd = ["date" => $nowTS, "userid" => $userid, "ipaddr" => $ipaddress, "description" => $desc, "user" => $user];
+        $dataadd = ["date" => $nowTS, "userid" => $userId, "ipaddr" => $ipaddress, "description" => $desc, "user" => $user];
         Capsule::table("tblactivitylog")->insert($dataadd);
-        Capsule::table('tblclients')->where('id', $entry->id)->update(['ip' => $ipaddress, 'lastlogin' => $nowTS, 'host' => $host]);
+        Capsule::table('tblusers')->where('id', $userId)->update(['last_ip' => $ipaddress, 'last_login' => $nowTS, 'last_hostname' => $host]);
 
         // User logged in
         return $result['redirect_url'];
     }
 
     return false;
+}
+
+function eid_easy_get_first_client($userId)
+{
+    $clientUser = Capsule::table('tblusers_clients')->where('auth_user_id', $userId)->first();
+    if ($clientUser) {
+        return $clientUser->client_id;
+    }
+    return null;
 }
 
 function eid_easy_get_existing_user($userData)
@@ -131,11 +147,15 @@ function eid_easy_get_existing_user($userData)
 
 function eid_easy_create_user($userData)
 {
-    $client_data              = array();
+    $client_data              = [];
     $client_data['firstname'] = $userData['firstname'];
     $client_data['lastname']  = $userData['lastname'];
     $client_data['password2'] = bin2hex(openssl_random_pseudo_bytes(40));
-    $client_data['email']     = $userData['country'] . "-" . $userData['idcode'] . "@placeholder.localhost";
+    if ($userData['country'] == 'EE') {
+        $client_data['email'] = $userData['idcode'] . "@eesti.ee";
+    } else {
+        $client_data['email'] = $userData['country'] . "-" . $userData['idcode'] . "@placeholder.localhost";
+    }
 
     logActivity("eID Easy creating new user: " . json_encode($userData));
 
@@ -165,22 +185,47 @@ function eid_easy_create_user($userData)
     }
 
     $result = localApi('AddUser', $client_data);
-    if (is_array($result) && !empty($result['user_id'])) {
-        Capsule::table('mod_eideasy_users')->insert([
-            'user_id'   => $result['user_id'],
-            'idcode'    => $userData['idcode'],
-            'country'   => $userData['country'],
-            'firstname' => $userData['firstname'],
-            'lastname'  => $userData['lastname']
-        ]);
+    if (!is_array($result) || empty($result['user_id'])) {
+        logActivity("eID Easy User create failed - " . json_encode($result));
 
-        logActivity("eID Easy User created: " . json_encode($result));
-        return $result['user_id'];
+        return null;
     }
 
-    logActivity("eID Easy User create failed - " . json_encode($result));
 
-    return null;
+    logActivity("eID Easy User created: " . json_encode($result));
+    $userId = $result['user_id'];
+
+    eid_easy_add_default_client($userId);
+
+    Capsule::table('mod_eideasy_users')->insert([
+        'user_id'   => $result['user_id'],
+        'idcode'    => $userData['idcode'],
+        'country'   => $userData['country'],
+        'firstname' => $userData['firstname'],
+        'lastname'  => $userData['lastname']
+    ]);
+
+    return $userId;
+}
+
+// Needed due CORE-16167
+function eid_easy_add_default_client($userId)
+{
+    $user = Capsule::table('tblusers')->find($userId);
+
+    $client_data = [
+        'owner_user_id'  => $user->id,
+        'skipvalidation' => true,
+        'country'        => 'EE'
+    ];
+    $result      = localApi('AddClient', $client_data);
+    if (!is_array($result) || empty($result['clientid'])) {
+        logActivity("eID Easy default Client create failed - " . json_encode([$result]));
+
+        return null;
+    }
+
+    return $result['clientid'];
 }
 
 function eid_easy_conf($key)

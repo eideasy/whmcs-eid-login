@@ -69,7 +69,7 @@ function eid_easy_login_html()
             $userId = eid_easy_create_user($userData);
         }
 
-        $redirect_to = eid_easy_login_user($userId);
+        $redirect_to = eid_easy_login_user($userId, $clientId);
         if ($redirect_to) {
             header("Location: " . $redirect_to);
             exit;
