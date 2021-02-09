@@ -142,6 +142,27 @@ function eid_easy_get_existing_user($userData)
         return null;
     }
 
+    $client = eid_easy_get_first_client($user->id);
+    // We have existing user but it has no clients. Broken user.
+    if (!$client) {
+        // Using custom client fields is deprecated since WHMCS 8.
+        $customField = Capsule::table('tblcustomfields')->where('fieldname', 'Kontaktisiku isikukood')->first();
+        if ($customField) {
+            $customFieldValue = Capsule::table('tblcustomfieldsvalues')->where('fieldid', $customField->id)->where('value', $userData['idcode'])->first();
+            if ($customFieldValue) {
+                // Delete duplicate user
+                Capsule::table('mod_eideasy_users')
+                    ->where('idcode', $userData['idcode'])
+                    ->where('country', $userData['country'])
+                    ->delete();
+                Capsule::table('tblusers')->where('id', $eidEasyUser->user_id)->delete();
+
+                // Create new user (That will be connected the the old client)
+                return eid_easy_create_user($userData);
+            }
+        }
+    }
+
     return $user->id;
 }
 
@@ -159,16 +180,33 @@ function eid_easy_create_user($userData)
 
     logActivity("eID Easy creating new user: " . json_encode($userData));
 
-    $customField = Capsule::table('tblcustomfields')->where('fieldname', 'Isikukood')->first(); // Using custom client fields is deprecated since WHMCS 8.
+    // Using custom client fields is deprecated since WHMCS 8.
+    $customField = Capsule::table('tblcustomfields')->where('fieldname', 'Kontaktisiku isikukood')->first();
     if ($customField) {
         $customFieldValue = Capsule::table('tblcustomfieldsvalues')->where('fieldid', $customField->id)->where('value', $userData['idcode'])->first();
         if ($customFieldValue) {
             $clientid  = $customFieldValue->relid;
             $userCount = Capsule::table('tblusers_clients')->where('client_id', $clientid)->count();
-            if ($userCount !== 1) {
+            if ($userCount > 1) {
                 logActivity("eID Easy invalid number of client users:" . $userCount);
                 return null;
+            } elseif ($userCount === 0) {
+                // Client without users and idcode matches with current login account
+                // Create user and connect with this client
+                $result = localApi('AddUser', $client_data);
+                if (!is_array($result) || empty($result['user_id'])) {
+                    logActivity("eID Easy User create failed 2 - " . json_encode($result));
+
+                    return null;
+                }
+                Capsule::table('tblusers_clients')->insert([
+                    'auth_user_id' => $result['user_id'],
+                    'client_id'    => $clientid,
+                    'owner'        => 1,
+                ]);
             }
+
+            // User exists and client exists but WHMCS 8.X style mapping is missing. Create mapping.
             $clientUser = Capsule::table('tblusers_clients')->where('client_id', $clientid)->first();
             if ($clientUser) {
                 Capsule::table('mod_eideasy_users')->insert([
@@ -190,7 +228,6 @@ function eid_easy_create_user($userData)
 
         return null;
     }
-
 
     logActivity("eID Easy User created: " . json_encode($result));
     $userId = $result['user_id'];
